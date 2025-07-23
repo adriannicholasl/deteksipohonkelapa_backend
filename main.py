@@ -1,20 +1,16 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from tensorflow.keras.models import load_model
-import json
-import numpy as np
-import os
+import json, numpy as np, os
 from utils import preprocess_patch_image, preprocess_whole_image
 
 app = FastAPI()
 
-# Optional CORS
+# Allow Flutter access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
 )
 
 MODEL_DIR = "models"
@@ -34,7 +30,7 @@ models_info = [
     }
 ]
 
-# Load models once
+# Load models
 for model in models_info:
     model["model"] = load_model(os.path.join(MODEL_DIR, model["filename"]))
     with open(os.path.join(MODEL_DIR, model["class_path"]), 'r') as f:
@@ -45,19 +41,14 @@ for model in models_info:
         )
 
 @app.post("/predict")
-async def predict_image(file: UploadFile = File(...)):
+async def predict(file: UploadFile = File(...)):
     contents = await file.read()
     with open("temp.jpg", "wb") as f:
         f.write(contents)
 
     results = []
-
     for model in models_info:
-        input_data = (
-            preprocess_patch_image("temp.jpg") if model["patch_based"]
-            else preprocess_whole_image("temp.jpg")
-        )
-
+        input_data = preprocess_patch_image("temp.jpg") if model["patch_based"] else preprocess_whole_image("temp.jpg")
         prediction = model["model"].predict(input_data)
         pred_index = int(np.argmax(prediction))
         confidence = float(prediction[0][pred_index])
@@ -66,7 +57,6 @@ async def predict_image(file: UploadFile = File(...)):
             if isinstance(model["class_names"], list)
             else model["class_names"].get(pred_index)
         )
-
         results.append({
             "model": model["name"],
             "label": label,
@@ -74,5 +64,4 @@ async def predict_image(file: UploadFile = File(...)):
         })
 
     os.remove("temp.jpg")
-
     return {"result": results}
